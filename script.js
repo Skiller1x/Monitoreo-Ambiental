@@ -1,8 +1,8 @@
 // ================================================================
 //  CONFIGURACIÓN DE FIREBASE
 // ================================================================
-const FIREBASE_ACTUAL_URL    = "https://monitoreo-ambiental-chptw3y-default-rtdb.firebaseio.com/actual.json";
-const FIREBASE_HISTORIAL_URL = "https://monitoreo-ambiental-chptw3y-default-rtdb.firebaseio.com/historial.json";
+const FIREBASE_ACTUAL_URL    = "https://monitoreoambiental-chptw3-default-rtdb.firebaseio.com/actual.json";
+const FIREBASE_HISTORIAL_URL = "https://monitoreoambiental-chptw3-default-rtdb.firebaseio.com/historial.json";
 
 
 // ================================================================
