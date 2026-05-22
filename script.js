@@ -409,7 +409,7 @@ if (dot && d.timestamp) {
 // ================================================================
 async function cargarHistorial() {
   try {
-    const res  = await fetch(FIREBASE_HISTORIAL_URL);
+    const res = await fetch(FIREBASE_HISTORIAL_URL + '?orderBy="$key"&limitToLast=100');
     const json = await res.json();
     if (!json) return;
 
