@@ -1,8 +1,17 @@
 // ================================================================
-//  CONFIGURACIÓN DE FIREBASE
+//  CONFIGURACIÓN DE SUPABASE
 // ================================================================
-const FIREBASE_ACTUAL_URL    = "https://monitoreoambiental-chptw3-default-rtdb.firebaseio.com/actual.json";
-const FIREBASE_HISTORIAL_URL = "https://monitoreoambiental-chptw3-default-rtdb.firebaseio.com/historial.json";
+const SUPABASE_URL  = 'https://mrsrxgtffmnovgypldiw.supabase.co';
+const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1yc3J4Z3RmZm1ub3ZneXBsZGl3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA0MzM5NDMsImV4cCI6MjA5NjAwOTk0M30.xvlnBw5zNFY4K_Wiev12zJnIyTobPZx_9wS6QFt2CZk';
+
+const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+
+// Estadísticas del período — se actualizan desde cargarHistorial()
+const statsCache = {
+  t_min: '--', t_prom: '--', t_max: '--',
+  h_min: '--', h_prom: '--', h_max: '--',
+};
+
 
 
 // ================================================================
@@ -20,48 +29,28 @@ const ctx    = canvas.getContext('2d');
 const DATASETS = {
   temp: {
     label: 'Temperatura', unit: '°C',
-    yMin: 24.8, yMax: 27.9,
-    yTicks: [24.8, 25.7, 26.7, 27.7],
     colorA: '#FF8C00', colorB: '#E63A00',
-    data1h: [],
-    data2h: [],
-    data3h: [],
+    data1h: [], data2h: [], data3h: [],
   },
   hum: {
     label: 'Humedad', unit: '%',
-    yMin: 30, yMax: 70,
-    yTicks: [30, 40, 50, 60, 70],
     colorA: '#4E9AF1', colorB: '#A855F7',
-    data1h: [],
-    data2h: [],
-    data3h: [],
+    data1h: [], data2h: [], data3h: [],
   },
   pm1: {
     label: 'PM 1.0', unit: 'µg',
-    yMin: 0, yMax: 50,
-    yTicks: [0, 12, 25, 37, 50],
     colorA: '#3DD17A', colorB: '#1A7A45',
-    data1h: [],
-    data2h: [],
-    data3h: [],
+    data1h: [], data2h: [], data3h: [],
   },
   pm25: {
     label: 'PM 2.5', unit: 'µg',
-    yMin: 0, yMax: 60,
-    yTicks: [0, 15, 30, 45, 60],
     colorA: '#FFC83C', colorB: '#CC8800',
-    data1h: [],
-    data2h: [],
-    data3h: [],
+    data1h: [], data2h: [], data3h: [],
   },
   pm10: {
     label: 'PM 10', unit: 'µg',
-    yMin: 0, yMax: 80,
-    yTicks: [0, 20, 40, 60, 80],
     colorA: '#FF4B4B', colorB: '#CC0000',
-    data1h: [],
-    data2h: [],
-    data3h: [],
+    data1h: [], data2h: [], data3h: [],
   },
 };
 
@@ -77,167 +66,113 @@ let activeMetric = 'temp';
 let activeRango  = '1h';
 
 function getLabels(rango) {
-  if (rango === '1h') return LABELS_1H;
-  if (rango === '2h') return LABELS_2H;
+  if (rango === '1h')  return LABELS_1H;
+  if (rango === '6h')  return LABELS_2H;
   return LABELS_3H;
 }
 
 function getData(metric, rango) {
   const ds = DATASETS[metric];
-  if (rango === '1h') return ds.data1h;
-  if (rango === '2h') return ds.data2h;
+  if (rango === '1h')  return ds.data1h;
+  if (rango === '6h')  return ds.data2h;
   return ds.data3h;
 }
 
 
 // ================================================================
-//  SECCIÓN 3 — RENDERIZADO DE LA GRÁFICA
+//  SECCIÓN 3 — PLUGIN DE BRILLO + INICIALIZACIÓN DE CHART.JS
 // ================================================================
-function drawChart() {
-  const dpr = window.devicePixelRatio || 1;
-  const W = canvas.width / dpr;
-  const H = canvas.height / dpr;
-  const scrollX = canvas.parentElement.scrollLeft || 0;
-  ctx.clearRect(0, 0, W, H);
+const glowPlugin = {
+  id: 'lineGlow',
+  beforeDatasetsDraw(chart) {
+    chart.ctx.save();
+    chart.ctx.shadowBlur = 12;
+    chart.ctx.shadowOffsetY = 4;
+    chart.ctx.shadowColor = DATASETS[activeMetric].colorA;
+  },
+  afterDatasetsDraw(chart) {
+    chart.ctx.restore();
+  }
+};
 
+const chartInstance = new Chart(canvas, {
+  type: 'line',
+  plugins: [glowPlugin],
+  data: {
+    labels: [],
+    datasets: [{
+      data: [],
+      borderColor: '#FF8C00',
+      backgroundColor: 'transparent',
+      borderWidth: 3,
+      pointRadius: 4.5,
+      pointBackgroundColor: '#0C1220',
+      pointBorderColor: '#FF8C00',
+      pointBorderWidth: 2.5,
+      fill: true,
+      tension: 0,
+    }]
+  },
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    animation: { duration: 400 },
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        backgroundColor: '#0C1220',
+        borderColor: 'rgba(255,255,255,0.1)',
+        borderWidth: 1,
+        titleColor: '#8A95B0',
+        bodyColor: '#FFFFFF',
+        callbacks: {
+          label: (c) => ` ${c.parsed.y} ${DATASETS[activeMetric].unit}`
+        }
+      }
+    },
+    scales: {
+      x: {
+        grid: { color: 'rgba(255,255,255,0.05)' },
+        ticks: {
+          color: 'rgba(90,100,130,0.9)',
+          font: { family: 'Outfit, sans-serif', size: 9 },
+          maxRotation: 0,
+          maxTicksLimit: 8,
+        }
+      },
+      y: {
+        grid: { color: 'rgba(255,255,255,0.08)' },
+        ticks: {
+          color: 'rgba(160,170,195,0.7)',
+          font: { family: 'Outfit, sans-serif', size: 10 },
+        }
+      }
+    }
+  }
+});
+
+// ================================================================
+//  SECCIÓN 4 — ACTUALIZAR GRÁFICA
+// ================================================================
+function updateChart() {
   const ds     = DATASETS[activeMetric];
   const data   = getData(activeMetric, activeRango);
   const labels = getLabels(activeRango);
 
-  const PAD_L = 44, PAD_R = 16, PAD_T = 14, PAD_B = 34;
-  const chartW = W - PAD_L - PAD_R;
-  const chartH = H - PAD_T - PAD_B;
-  const yMin = ds.yMin, yMax = ds.yMax;
-
-  // Fondo
-  ctx.fillStyle = '#0D1525';
-  roundRect(ctx, 0, 0, W, H, 10);
-  ctx.fill();
-
-  // Líneas de cuadrícula y ticks del eje Y
-  ctx.setLineDash([3, 5]);
-  ctx.lineWidth = 1;
-  ds.yTicks.forEach(tick => {
-    const y = PAD_T + chartH - ((tick - yMin) / (yMax - yMin)) * chartH;
-    ctx.beginPath();
-    ctx.strokeStyle = 'rgba(255,255,255,0.08)';
-    ctx.moveTo(PAD_L, y); ctx.lineTo(PAD_L + chartW, y); ctx.stroke();
-  });
-  ctx.setLineDash([]);
-
-  // Puntos de la línea
-  const n = data.length;
-  const slotW = chartW / (n > 1 ? n - 1 : 1);
-  const points = data.map((val, i) => {
-    const normH = ((val - yMin) / (yMax - yMin)) * chartH;
-    return { x: PAD_L + i * slotW, y: Math.max(PAD_T, PAD_T + chartH - normH) };
-  });
-
-  if (points.length > 0) {
-    // Área rellena
-    ctx.beginPath();
-    ctx.moveTo(points[0].x, PAD_T + chartH);
-    points.forEach(p => ctx.lineTo(p.x, p.y));
-    ctx.lineTo(points[n - 1].x, PAD_T + chartH);
-    ctx.closePath();
-    const fillGrad = ctx.createLinearGradient(0, PAD_T, 0, PAD_T + chartH);
-    fillGrad.addColorStop(0, ds.colorA + '55');
-    fillGrad.addColorStop(1, ds.colorA + '00');
-    ctx.fillStyle = fillGrad; ctx.fill();
-
-    // Línea principal con efecto neón
-    ctx.beginPath();
-    ctx.moveTo(points[0].x, points[0].y);
-    points.forEach(p => ctx.lineTo(p.x, p.y));
-    ctx.lineWidth = 3.5;
-    ctx.strokeStyle = ds.colorA;
-    ctx.shadowColor = ds.colorA;
-    ctx.shadowBlur = 10; ctx.shadowOffsetY = 4;
-    ctx.lineJoin = 'round'; ctx.lineCap = 'round';
-    ctx.stroke();
-    ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
-
-    // Nodos en cada punto
-    points.forEach(p => {
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, 4.5, 0, Math.PI * 2);
-      ctx.fillStyle = '#0C1220'; ctx.fill();
-      ctx.lineWidth = 2.5; ctx.strokeStyle = ds.colorA; ctx.stroke();
-    });
+  let bg = ds.colorA + '22';
+  if (chartInstance.chartArea) {
+    const gradient = ctx.createLinearGradient(0, chartInstance.chartArea.top, 0, chartInstance.chartArea.bottom);
+    gradient.addColorStop(0, ds.colorA + '55');
+    gradient.addColorStop(1, ds.colorA + '00');
+    bg = gradient;
   }
 
-  // Fondo fijo para el eje Y (sigue el scroll)
-  ctx.fillStyle = '#0D1525';
-  ctx.fillRect(scrollX, 0, PAD_L, H);
-
-  // Etiquetas eje Y (siguen el scroll)
-  ctx.fillStyle = 'rgba(160,170,195,0.7)';
-  ctx.font = '10px Outfit, sans-serif';
-  ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
-  ds.yTicks.forEach(tick => {
-    const y = PAD_T + chartH - ((tick - yMin) / (yMax - yMin)) * chartH;
-    ctx.fillText(tick, scrollX + PAD_L - 6, y);
-  });
-
-  // Etiquetas eje X
-  ctx.fillStyle = 'rgba(90,100,130,0.9)';
-  ctx.font = '9px Outfit, sans-serif';
-  ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-  const step = n > 8 ? 2 : 1;
-  labels.forEach((lbl, i) => {
-    if (i % step !== 0) return;
-    ctx.fillText(lbl, PAD_L + i * slotW, PAD_T + chartH + 10);
-  });
-}
-
-
-// ================================================================
-//  SECCIÓN 4 — AUXILIAR: roundRect
-// ================================================================
-function roundRect(ctx, x, y, w, h, r) {
-  ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.lineTo(x + w - r, y);
-  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
-  ctx.lineTo(x + w, y + h - r);
-  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
-  ctx.lineTo(x + r, y + h);
-  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
-  ctx.lineTo(x, y + r);
-  ctx.quadraticCurveTo(x, y, x + r, y);
-  ctx.closePath();
-}
-
-function recalcAxis(metric) {
-  const ds = DATASETS[metric];
-  const allData = [...ds.data1h, ...ds.data2h, ...ds.data3h]
-    .map(Number).filter(v => !isNaN(v) && isFinite(v));
-  if (allData.length === 0) return;
-  const min = Math.min(...allData);
-  const max = Math.max(...allData);
-  const pad = Math.max((max - min) * 0.2, 1);
-  ds.yMin = parseFloat((min - pad).toFixed(1));
-  ds.yMax = parseFloat((max + pad).toFixed(1));
-  const step = (ds.yMax - ds.yMin) / 3;
-  ds.yTicks = [0,1,2,3].map(i => parseFloat((ds.yMin + i * step).toFixed(1)));
-}
-
-
-// ================================================================
-//  SECCIÓN 5 — RESIZE CON SOPORTE DPI
-// ================================================================
-function resizeCanvas() {
-  const wrap = canvas.parentElement;
-  const dpr  = window.devicePixelRatio || 1;
-  const rect = wrap.getBoundingClientRect();
-  const isMobile = window.innerWidth <= 768;
-  const cssW = isMobile ? Math.max(rect.width, 700) : rect.width;
-  canvas.width  = cssW * dpr;
-  canvas.height = rect.height * dpr;
-  ctx.scale(dpr, dpr);
-  canvas.style.width  = cssW + 'px';
-  canvas.style.height = rect.height + 'px';
-  drawChart();
+  chartInstance.data.labels = [...labels];
+  chartInstance.data.datasets[0].data = [...data];
+  chartInstance.data.datasets[0].borderColor = ds.colorA;
+  chartInstance.data.datasets[0].pointBorderColor = ds.colorA;
+  chartInstance.data.datasets[0].backgroundColor = bg;
+  chartInstance.update();
 }
 
 
@@ -277,9 +212,98 @@ function updateTabColors() {
   });
 }
 
+// ================================================================
+//  SECCIÓN 8 - CÁLCULOS DERIVADOS 
+// ================================================================
+function calcSensacion(T, H) {
+  if (T < 27 || H < 40) return T;
+  const HI = -8.78469475556
+    + 1.61139411      * T
+    + 2.33854883889   * H
+    - 0.14611605      * T * H
+    - 0.012308094     * T * T
+    - 0.0164248277778 * H * H
+    + 0.002211732     * T * T * H
+    + 0.00072546      * T * H * H
+    - 0.000003582     * T * T * H * H;
+  return parseFloat(HI.toFixed(1));
+}
+
+function calcAQI(pm25, pm10) {
+  const bp25 = [
+    [0,    12,    0,   50],
+    [12.1, 35.4,  51,  100],
+    [35.5, 55.4,  101, 150],
+    [55.5, 150.4, 151, 200],
+    [150.5,250.4, 201, 300],
+    [250.5,500.4, 301, 500],
+  ];
+  const bp10 = [
+    [0,   54,   0,   50],
+    [55,  154,  51,  100],
+    [155, 254,  101, 150],
+    [255, 354,  151, 200],
+    [355, 424,  201, 300],
+    [425, 604,  301, 500],
+  ];
+
+  function subIndice(val, bp) {
+    for (const [cLo, cHi, iLo, iHi] of bp) {
+      if (val <= cHi)
+        return Math.round(((iHi - iLo) / (cHi - cLo)) * (val - cLo) + iLo);
+    }
+    return 500;
+  }
+
+  return Math.max(subIndice(pm25, bp25), subIndice(pm10, bp10));
+}
+
+function calcPMStatus(val, tipo) {
+  const limits = {
+    pm1:  [[15, 'Bueno'], [30,       'Moderado']],
+    pm25: [[12, 'Bueno'], [35.4,     'Moderado']],
+    pm10: [[54, 'Bueno'], [154,      'Moderado']],
+  };
+  for (const [umbral, label] of limits[tipo]) {
+    if (val <= umbral) return label;
+  }
+  return 'Malo';
+}
+
+function calcRecomendacion(aqi) {
+  if (aqi <= 50)  return 'Sin Riesgo';
+  if (aqi <= 100) return 'Riesgo Minimo';
+  if (aqi <= 150) return 'Riesgo Moderado';
+  if (aqi <= 200) return 'Riesgo Alto';
+  if (aqi <= 300) return 'Riesgo Muy Alto';
+  return 'Peligroso';
+}
+
+function calcular(raw) {
+  const T   = parseFloat(raw.temperatura);
+  const H   = parseFloat(raw.humedad);
+  const pm1  = parseFloat(raw.pm1);
+  const pm25 = parseFloat(raw.pm25);
+  const pm10 = parseFloat(raw.pm10);
+  const aqi  = calcAQI(pm25, pm10);
+
+  return {
+    temperatura:   T,
+    humedad:       H,
+    sensacion:     calcSensacion(T, H),
+    pm1, pm25, pm10,
+    aqi,
+    estado_humo:   raw.estado_humo,
+    estado_pm1:    calcPMStatus(pm1,  'pm1'),
+    estado_pm25:   calcPMStatus(pm25, 'pm25'),
+    estado_pm10:   calcPMStatus(pm10, 'pm10'),
+    recomendacion: calcRecomendacion(aqi),
+    ...statsCache,
+  };
+}
 
 // ================================================================
-//  SECCIÓN 8 — ACTUALIZAR DASHBOARD CON DATOS DE FIREBASE
+//  SECCIÓN 9 — ACTUALIZAR DASHBOARD CON DATOS DE FIREBASE
 // ================================================================
 function actualizarDashboard(d) {
 
@@ -409,60 +433,73 @@ if (dot && d.timestamp) {
 // ================================================================
 async function cargarHistorial() {
   try {
-    const res = await fetch(FIREBASE_HISTORIAL_URL + '?orderBy="$key"&limitToLast=100');
-    const json = await res.json();
-    if (!json) return;
+    const desde = new Date(Date.now() - 12 * 3600 * 1000).toISOString();
 
-    // Firebase POST devuelve objeto con claves auto-generadas → convertir a array
-    const todas = Object.values(json)
-      .sort((a, b) => a.timestamp - b.timestamp); // Orden cronológico
+    const { data, error } = await db
+      .from('historial')
+      .select('temperatura, humedad, pm1, pm25, pm10, created_at')
+      .gte('created_at', desde)
+      .order('created_at', { ascending: true });
 
-    if (todas.length === 0) return;
+    if (error) { console.warn('Error cargando historial:', error); return; }
+    if (!data || data.length === 0) return;
 
-    const ahora = Date.now() / 1000; // Timestamp actual en segundos
-
-    // Filtrar entradas según el rango de tiempo y tomar las últimas muestras
     function subsample(arr, max) {
       if (arr.length <= max) return arr;
       const step = Math.ceil(arr.length / max);
-      return arr.filter((_, i) => i % step === 0).slice(-max);
+      return arr.filter((_, i) => i % step === 0);
     }
 
-    const entradas1h = subsample(todas.filter(e => e.timestamp >= ahora - 3600),  12);
-    const entradas2h = subsample(todas.filter(e => e.timestamp >= ahora - 7200),  24);
-    const entradas3h = subsample(todas.filter(e => e.timestamp >= ahora - 10800), 36);
+    function formatLabel(iso) {
+      return new Date(iso).toTimeString().slice(0, 5);
+    }
 
-    // Función auxiliar: sobreescribe los datos y etiquetas de cada rango
-  function aplicar(entradas, sufijo, labelsArr) {
-    if (entradas.length === 0) {
+    function aplicar(entries, sufijo, labelsArr, max) {
+      const muestra = subsample(entries, max);
       labelsArr.length = 0;
-      DATASETS['temp'][`data${sufijo}`] = [];
-      DATASETS['hum'][`data${sufijo}`]  = [];
-      DATASETS['pm1'][`data${sufijo}`]  = [];
-      DATASETS['pm25'][`data${sufijo}`] = [];
-      DATASETS['pm10'][`data${sufijo}`] = [];
-      return;
+      DATASETS.temp[`data${sufijo}`]  = muestra.map(e => parseFloat(e.temperatura).toFixed(1));
+      DATASETS.hum[`data${sufijo}`]   = muestra.map(e => parseFloat(e.humedad).toFixed(1));
+      DATASETS.pm1[`data${sufijo}`]   = muestra.map(e => parseFloat(e.pm1));
+      DATASETS.pm25[`data${sufijo}`]  = muestra.map(e => parseFloat(e.pm25));
+      DATASETS.pm10[`data${sufijo}`]  = muestra.map(e => parseFloat(e.pm10));
+      muestra.forEach(e => labelsArr.push(formatLabel(e.created_at)));
     }
 
-    // Sobreescribir datos del sensor para el rango correspondiente
-    DATASETS.temp[`data${sufijo}`] = entradas.map(e => parseFloat(e.temperatura).toFixed(1));
-    DATASETS.hum[`data${sufijo}`]  = entradas.map(e => parseFloat(e.humedad).toFixed(1));
-    DATASETS.pm1[`data${sufijo}`]  = entradas.map(e => e.pm1);
-    DATASETS.pm25[`data${sufijo}`] = entradas.map(e => e.pm25);
-    DATASETS.pm10[`data${sufijo}`] = entradas.map(e => e.pm10);
+    const ahora = Date.now();
+    aplicar(data.filter(e => Date.now() - new Date(e.created_at) <= 3600000),  '1h', LABELS_1H, 20);
+    aplicar(data.filter(e => Date.now() - new Date(e.created_at) <= 21600000), '2h', LABELS_2H, 36);
+    aplicar(data,                                                               '3h', LABELS_3H, 48);
 
-    // Etiquetas del eje X con la hora real de cada lectura
-    labelsArr.length = 0;
-    entradas.forEach(e => labelsArr.push(e.ultima_actualizacion || ''));
+    // Actualizar statsCache con datos de las 12h
+    const temps = data.map(e => parseFloat(e.temperatura)).filter(v => !isNaN(v));
+    const hums  = data.map(e => parseFloat(e.humedad)).filter(v => !isNaN(v));
 
-    ['temp','hum','pm1','pm25','pm10'].forEach(recalcAxis);
-  }
+    if (temps.length > 0) {
+      statsCache.t_min  = Math.min(...temps).toFixed(1);
+      statsCache.t_max  = Math.max(...temps).toFixed(1);
+      statsCache.t_prom = (temps.reduce((a, b) => a + b, 0) / temps.length).toFixed(1);
+    }
+    if (hums.length > 0) {
+      statsCache.h_min  = Math.min(...hums).toFixed(0);
+      statsCache.h_max  = Math.max(...hums).toFixed(0);
+      statsCache.h_prom = (hums.reduce((a, b) => a + b, 0) / hums.length).toFixed(0);
+    }
 
-    aplicar(entradas1h, '1h', LABELS_1H);
-    aplicar(entradas2h, '2h', LABELS_2H);
-    aplicar(entradas3h, '3h', LABELS_3H);
+    // Reflejar stats en el DOM inmediatamente
+    const statsTemp = document.querySelectorAll('.stats-row:not(.dark) .s-value');
+    if (statsTemp.length >= 3) {
+      statsTemp[0].textContent = statsCache.t_min  + '°C';
+      statsTemp[1].textContent = statsCache.t_prom + '°C';
+      statsTemp[2].textContent = statsCache.t_max  + '°C';
+    }
+    const statsHum = document.querySelectorAll('.stats-row.dark .s-value');
+    if (statsHum.length >= 3) {
+      statsHum[0].textContent = statsCache.h_min  + '%';
+      statsHum[1].textContent = statsCache.h_prom + '%';
+      statsHum[2].textContent = statsCache.h_max  + '%';
+    }
 
-    drawChart();
+    updateChart();
 
   } catch (e) {
     console.warn('Error cargando historial:', e);
@@ -471,20 +508,36 @@ async function cargarHistorial() {
 
 
 // ================================================================
-//  SECCIÓN 10 — FETCH DE DATOS ACTUALES DE FIREBASE
+//  SECCIÓN 10 — FETCH DE DATOS ACTUALES DE SUPABASE
 // ================================================================
 async function fetchActual() {
-  const now = new Date();
-  const el = document.getElementById('liveTime');
-  if (el) el.textContent = now.toTimeString().slice(0,8);
+  const { data, error } = await db
+    .from('lectura_actual')
+    .select('*')
+    .eq('id', 1)
+    .single();
 
-  try {
-    const res  = await fetch(FIREBASE_ACTUAL_URL);
-    const data = await res.json();
-    if (data) actualizarDashboard(data);
-  } catch (e) {
-    console.warn('Error al leer Firebase:', e);
-  }
+  if (error) { console.warn('Error al leer lectura_actual:', error); return; }
+  if (data) actualizarDashboard(calcular(data));
+
+  const el = document.getElementById('liveTime');
+  if (el) el.textContent = new Date().toTimeString().slice(0, 8);
+}
+
+
+function iniciarRealtime() {
+  db
+    .channel('lectura_actual_changes')
+    .on(
+      'postgres_changes',
+      { event: 'UPDATE', schema: 'public', table: 'lectura_actual', filter: 'id=eq.1' },
+      (payload) => {
+        actualizarDashboard(calcular(payload.new));
+        const el = document.getElementById('liveTime');
+        if (el) el.textContent = new Date().toTimeString().slice(0, 8);
+      }
+    )
+    .subscribe();
 }
 
 
@@ -512,20 +565,12 @@ if (rangoSelect) {
   });
 }
 
-// Resize con debounce
-let resizeTimer;
-window.addEventListener('resize', () => {
-  clearTimeout(resizeTimer);
-  resizeTimer = setTimeout(resizeCanvas, 80);
-});
-
-canvas.parentElement.addEventListener('scroll', drawChart);
 
 // ================================================================
 //  SECCIÓN 12 — INICIALIZACIÓN
 // ================================================================
 window.addEventListener('load', () => {
-  resizeCanvas();       // Dibuja la gráfica ajustada al DPI
+  updateChart();
   animateDonut(0);      // Anima el donut desde 0 (se actualiza con Firebase)
   updateTabColors();    // Colorea la pestaña activa inicial
 
@@ -536,7 +581,7 @@ window.addEventListener('load', () => {
   // Polling automático:
   // · Datos actuales  → cada 1 segundo
   // · Historial       → cada 5 segundos
-  setInterval(fetchActual,      1_000);
+  iniciarRealtime();
   setInterval(cargarHistorial,  5_000);
 
   setInterval(() => {
