@@ -303,42 +303,69 @@ function calcular(raw) {
 }
 
 // ================================================================
-//  SECCIÓN 9 — ACTUALIZAR DASHBOARD CON DATOS DE FIREBASE
+//  SECCIÓN 9 — ACTUALIZAR DASHBOARD CON DATOS DE SUPABASE
 // ================================================================
+
+const UMBRAL_STALE_SEG = 180;
+
+function esDato(v) {
+  return v !== null && v !== undefined && v !== '' && !isNaN(parseFloat(v));
+}
+
+function esFresco(d) {
+  if (!d?.updated_at) return false;
+  const segundos = (Date.now() - new Date(d.updated_at).getTime()) / 1000;
+  return segundos < UMBRAL_STALE_SEG;
+}
+
 function actualizarDashboard(d) {
 
   // ── TEMPERATURA ────────────────────────────────────────────────
-  document.querySelector('.temp-value').textContent     = parseFloat(d.temperatura).toFixed(1) + '°C';
-  document.querySelector('.temp-sensation').textContent = 'Sensación  ' + parseFloat(d.sensacion).toFixed(1) + '°C';
+  const tempEl = document.querySelector('.temp-value');
+  if (esDato(d.temperatura)) {
+    tempEl.textContent = parseFloat(d.temperatura).toFixed(1) + '°C';
+    tempEl.style.color = '';
+    document.querySelector('.temp-sensation').textContent = 'Sensación  ' + (esDato(d.sensacion) ? parseFloat(d.sensacion).toFixed(1) + '°C' : '--°C');
+  } else {
+    tempEl.textContent = 'Sin Datos';
+    tempEl.style.color = 'rgba(255,255,255,0.3)';
+    document.querySelector('.temp-sensation').textContent = 'Sensación  --°C';
+  }
+
   const statsTemp = document.querySelectorAll('.stats-row:not(.dark) .s-value');
   if (statsTemp.length >= 3) {
-    statsTemp[0].textContent = parseFloat(d.t_min).toFixed(1)  + '°C';
-    statsTemp[1].textContent = parseFloat(d.t_prom).toFixed(1) + '°C';
-    statsTemp[2].textContent = parseFloat(d.t_max).toFixed(1)  + '°C';
+    statsTemp[0].textContent = esDato(d.t_min)  ? parseFloat(d.t_min).toFixed(1)  + '°C' : '--°C';
+    statsTemp[1].textContent = esDato(d.t_prom) ? parseFloat(d.t_prom).toFixed(1) + '°C' : '--°C';
+    statsTemp[2].textContent = esDato(d.t_max)  ? parseFloat(d.t_max).toFixed(1)  + '°C' : '--°C';
   }
+
   // ── FLECHA DE TENDENCIA ────────────────────────────────────
-const arrow = document.querySelector('.temp-arrow-classic');
-const tempActual = parseFloat(d.temperatura);
-const tempAnterior = parseFloat(arrow.dataset.prev || tempActual);
-
-if (tempActual > tempAnterior) {
-  arrow.style.transform = 'rotate(0deg)';
-  arrow.style.color = 'white';
-} else if (tempActual < tempAnterior) {
-  arrow.style.transform = 'rotate(180deg)';
-  arrow.style.color = 'white';
-}
-
-arrow.dataset.prev = tempActual; // Guarda el valor actual para la próxima comparación
+  const arrow = document.querySelector('.temp-arrow-classic');
+  if (esDato(d.temperatura)) {
+    const tempActual   = parseFloat(d.temperatura);
+    const tempAnterior = parseFloat(arrow.dataset.prev || tempActual);
+    if (tempActual > tempAnterior)      { arrow.style.transform = 'rotate(0deg)';   arrow.style.color = 'white'; }
+    else if (tempActual < tempAnterior) { arrow.style.transform = 'rotate(180deg)'; arrow.style.color = 'white'; }
+    arrow.dataset.prev = tempActual;
+  }
 
   // ── HUMEDAD ────────────────────────────────────────────────────
-  document.querySelector('.hum-value').textContent = parseFloat(d.humedad).toFixed(1) + '%';
-  document.getElementById('humBar').style.width      = d.humedad + '%';
+  const humEl = document.querySelector('.hum-value');
+  if (esDato(d.humedad)) {
+    humEl.textContent = parseFloat(d.humedad).toFixed(1) + '%';
+    humEl.style.color = '';
+    document.getElementById('humBar').style.width = d.humedad + '%';
+  } else {
+    humEl.textContent = 'Sin Datos';
+    humEl.style.color = 'rgba(255,255,255,0.3)';
+    document.getElementById('humBar').style.width = '0%';
+  }
+
   const statsHum = document.querySelectorAll('.stats-row.dark .s-value');
   if (statsHum.length >= 3) {
-    statsHum[0].textContent = d.h_min  + '%';
-    statsHum[1].textContent = d.h_prom + '%';
-    statsHum[2].textContent = d.h_max  + '%';
+    statsHum[0].textContent = esDato(d.h_min)  ? d.h_min  + '%' : '--%';
+    statsHum[1].textContent = esDato(d.h_prom) ? d.h_prom + '%' : '--%';
+    statsHum[2].textContent = esDato(d.h_max)  ? d.h_max  + '%' : '--%';
   }
 
   // ── NIVEL DE RIESGO ────────────────────────────────────
@@ -350,49 +377,66 @@ arrow.dataset.prev = tempActual; // Guarda el valor actual para la próxima comp
   'Riesgo Muy Alto': { emoji: '🔴', texto: 'Exposición riesgosa para todos'           },
   'Peligroso':       { emoji: '☠️', texto: 'Niveles peligrosos, minimizar exposición' },
 };
-const rec = recomendacionMap[d.recomendacion] || { emoji: '❓', texto: d.recomendacion };
+const rec = recomendacionMap[d.recomendacion] || { emoji: '❓', texto: 'Sin Datos' };
 document.querySelector('.cont-emoji').textContent = rec.emoji;
 document.querySelector('.cont-label').textContent = rec.texto;
 
   // ── ESTADO (Detección de Humo) ─────────────────────────────────
   // El panel "Estado" solo indica si hay humo o no.
   // Normal → escudo verde | Humo Detectado → fuego rojo
-  if (d.estado_humo === 'Humo Detectado') {
-    document.querySelector('.shield-icon').textContent  = '🔥';
-    document.querySelector('.status-label').textContent = 'Humo Detectado';
-    document.querySelector('.status-label').style.color = '#FF4B4B';
-    document.querySelector('.shield-wrap').style.boxShadow = '0 0 0 2px rgba(255,75,75,.35)';
+  if (!d.estado_humo) {
+  document.querySelector('.shield-icon').textContent  = '❓';
+  document.querySelector('.status-label').textContent = 'Sin Datos';
+  document.querySelector('.status-label').style.color = 'rgba(255,255,255,0.3)';
+  document.querySelector('.shield-wrap').style.boxShadow = '0 0 0 2px rgba(255,255,255,0.1)';
+  } else if (d.estado_humo === 'Humo Detectado') {
+  document.querySelector('.shield-icon').textContent  = '🔥';
+  document.querySelector('.status-label').textContent = 'Humo Detectado';
+  document.querySelector('.status-label').style.color = '#FF4B4B';
+  document.querySelector('.shield-wrap').style.boxShadow = '0 0 0 2px rgba(255,75,75,.35)';
   } else {
-    document.querySelector('.shield-icon').textContent  = '🛡️';
-    document.querySelector('.status-label').textContent = 'Normal';
-    document.querySelector('.status-label').style.color = '#3DD17A';
-    document.querySelector('.shield-wrap').style.boxShadow = '0 0 0 2px rgba(61,209,122,.25)';
+  document.querySelector('.shield-icon').textContent  = '🛡️';
+  document.querySelector('.status-label').textContent = 'Normal';
+  document.querySelector('.status-label').style.color = '#3DD17A';
+  document.querySelector('.shield-wrap').style.boxShadow = '0 0 0 2px rgba(61,209,122,.25)';
   }
 
   // ── DONUT (% de contaminación) ─────────────────────────────────
   const arc  = document.getElementById('donutArc');
-  const pct  = Math.min((parseFloat(d.aqi) / 500) * 100, 100) || 0;
   const circ = 2 * Math.PI * 78;
-  const dash = (pct / 100) * circ;
 
-  let color;
-  const aqi = parseFloat(d.aqi) || 0;
-  if (aqi <= 50)       color = '#3DD17A';  // Buena
-  else if (aqi <= 100) color = '#FFC83C';  // Moderada
-  else if (aqi <= 150) color = '#FF8C00';  // Dañina para sensibles
-  else if (aqi <= 200) color = '#FF4B4B';  // Dañina
-  else if (aqi <= 300) color = '#A855F7';  // Muy dañina
-  else                 color = '#7B0000';  // Peligrosa
+  if (!esDato(d.aqi) || parseFloat(d.aqi) === 0) {
+    arc.setAttribute('stroke', 'rgba(255,255,255,0.1)');
+    arc.style.transition = 'stroke-dasharray 1s ease';
+    arc.setAttribute('stroke-dasharray', `0 ${circ}`);
+    document.querySelector('.donut-pct').textContent = '--';
+    document.querySelector('.donut-pct').style.color = 'rgba(255,255,255,0.25)';
+  } else {
+    const pct  = Math.min((parseFloat(d.aqi) / 500) * 100, 100);
+    const dash = (pct / 100) * circ;
+    const aqi  = parseFloat(d.aqi);
+    let color;
+    if (aqi <= 50)       color = '#3DD17A';
+    else if (aqi <= 100) color = '#FFC83C';
+    else if (aqi <= 150) color = '#FF8C00';
+    else if (aqi <= 200) color = '#FF4B4B';
+    else if (aqi <= 300) color = '#A855F7';
+    else                 color = '#7B0000';
 
-arc.setAttribute('stroke', color);
-arc.style.transition = 'stroke-dasharray 1s ease';
-arc.setAttribute('stroke-dasharray', `${dash} ${circ}`);
-
-document.querySelector('.donut-pct').textContent = d.aqi || '0';
-document.querySelector('.donut-pct').style.color = color;
+    arc.setAttribute('stroke', color);
+    arc.style.transition = 'stroke-dasharray 1s ease';
+    arc.setAttribute('stroke-dasharray', `${dash} ${circ}`);
+    document.querySelector('.donut-pct').textContent = d.aqi;
+    document.querySelector('.donut-pct').style.color = color;
+  }
 
   // ── BARRAS DE PM (PM1, PM2.5, PM10) ───────────────────────────
   const colorMap = { 'Bueno': '#3DD17A', 'Moderado': '#FFC83C', 'Malo': '#FF4B4B' };
+  const gradientMap = {
+    'Bueno':    'linear-gradient(90deg, #28A860, #3DD17A)',
+    'Moderado': 'linear-gradient(90deg, #CC8800, #FFC83C)',
+    'Malo':     'linear-gradient(90deg, #CC1010, #FF4B4B)',
+  };
 
   const pmData = [
     { val: d.pm1,  estado: d.estado_pm1,  pct: Math.min((d.pm1  / 30)  * 100, 100) },
@@ -400,23 +444,27 @@ document.querySelector('.donut-pct').style.color = color;
     { val: d.pm10, estado: d.estado_pm10, pct: Math.min((d.pm10 / 110) * 100, 100) },
   ];
 
-document.querySelectorAll('.pm-item').forEach((item, i) => {
-    const color = colorMap[pmData[i].estado] || '#FFC83C';
-
-    // Gradientes por estado
-    const gradientMap = {
-        'Bueno':    'linear-gradient(90deg, #28A860, #3DD17A)',
-        'Moderado': 'linear-gradient(90deg, #CC8800, #FFC83C)',
-        'Malo':     'linear-gradient(90deg, #CC1010, #FF4B4B)',
-    };
-    const gradient = gradientMap[pmData[i].estado] || gradientMap['Moderado'];
-
-    item.querySelector('.pm-val').textContent          = pmData[i].val + ' µg/m³';
-    item.querySelector('.pm-status').textContent       = pmData[i].estado;
-    item.querySelector('.pm-status').style.color       = color;
-    item.querySelector('.pm-dot').style.background     = color;
-    item.querySelector('.pm-fill').style.width         = pmData[i].pct + '%';
-    item.querySelector('.pm-fill').style.background    = gradient;
+  document.querySelectorAll('.pm-item').forEach((item, i) => {
+    if (!esDato(pmData[i].val)) {
+      // Estado sin datos — todo en gris
+      item.querySelector('.pm-val').textContent        = 'Sin Datos';
+      item.querySelector('.pm-val').style.color        = 'rgba(255,255,255,0.3)';
+      item.querySelector('.pm-status').textContent     = '--';
+      item.querySelector('.pm-status').style.color     = 'rgba(255,255,255,0.25)';
+      item.querySelector('.pm-dot').style.background   = 'rgba(255,255,255,0.12)';
+      item.querySelector('.pm-fill').style.width       = '0%';
+      item.querySelector('.pm-fill').style.background  = 'rgba(255,255,255,0.08)';
+    } else {
+      const color    = colorMap[pmData[i].estado] || '#FFC83C';
+      const gradient = gradientMap[pmData[i].estado] || gradientMap['Moderado'];
+      item.querySelector('.pm-val').textContent        = pmData[i].val + ' µg/m³';
+      item.querySelector('.pm-val').style.color        = '';
+      item.querySelector('.pm-status').textContent     = pmData[i].estado;
+      item.querySelector('.pm-status').style.color     = color;
+      item.querySelector('.pm-dot').style.background   = color;
+      item.querySelector('.pm-fill').style.width       = pmData[i].pct + '%';
+      item.querySelector('.pm-fill').style.background  = gradient;
+    }
   });
 
   // ── INDICADOR LIVE ─────────────────────────────────────────
@@ -518,7 +566,7 @@ async function fetchActual() {
     .single();
 
   if (error) { console.warn('Error al leer lectura_actual:', error); return; }
-  if (data) actualizarDashboard(calcular(data));
+  if (data) actualizarDashboard(esFresco(data) ? calcular(data) : {});
 
   const el = document.getElementById('liveTime');
   if (el) el.textContent = new Date().toTimeString().slice(0, 8);
@@ -552,7 +600,7 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     btn.classList.add('active');
     activeMetric = btn.dataset.metric;
     updateTabColors();
-    drawChart();
+    updateChart();
   });
 });
 
@@ -561,7 +609,7 @@ const rangoSelect = document.getElementById('rangoSelect');
 if (rangoSelect) {
   rangoSelect.addEventListener('change', e => {
     activeRango = e.target.value;
-    drawChart();
+    updateChart();
   });
 }
 
