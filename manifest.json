@@ -1,7 +1,7 @@
 {
   "name": "Monitoreo Ambiental CHPT-W3Y",
   "short_name": "CHPT-W3Y",
-  "description": "Dashboard de monitoreo ambiental en tiempo real",
+  "description": "Monitoreo Microambiental",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#060916",

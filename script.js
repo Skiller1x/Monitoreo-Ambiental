@@ -637,3 +637,50 @@ window.addEventListener('load', () => {
     if (el) el.textContent = new Date().toTimeString().slice(0, 8);
   }, 1000);
 });
+
+// ================================================================
+//  SECCIÓN 13 — NOTIFICACIONES PUSH
+// ================================================================
+const VAPID_PUBLIC_KEY = 'BF-sE5y2XZHasGEKXbVIUrzZHLxO1T0_Y0_DJga8-A5DBRsBH2YqbF8TN-_cGx3zOfcmNKI75GGqL_zqUUIKnpo';
+
+// Convierte la clave VAPID de Base64 a Uint8Array
+// (formato que requiere la API de suscripción del browser)
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64  = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const raw     = atob(base64);
+  return Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
+}
+
+async function suscribirNotificaciones() {
+  // Verificar soporte del browser
+  if (!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) {
+    console.log('Este browser no soporta notificaciones push.');
+    return;
+  }
+
+  // Pedir permiso al usuario
+  const permiso = await Notification.requestPermission();
+  if (permiso !== 'granted') {
+    console.log('Permiso de notificaciones denegado.');
+    return;
+  }
+
+  // Esperar a que el Service Worker esté listo
+  const registro = await navigator.serviceWorker.ready;
+
+  // Suscribirse al servicio push del browser (Google, Apple, etc.)
+  const suscripcion = await registro.pushManager.subscribe({
+    userVisibleOnly:      true,   // Requerido: toda notif push debe mostrarse al usuario
+    applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+  });
+
+  // Mandar la suscripción a Netlify para guardarla en Supabase
+  await fetch('/.netlify/functions/push-subscribe', {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify(suscripcion),
+  });
+
+  console.log('Suscripción push registrada.');
+}

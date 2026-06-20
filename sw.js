@@ -1,7 +1,7 @@
 // ================================================================
 //  SERVICE WORKER — CHPT-W3Y
 //  Fase 1: cache básico para que la app sea instalable.
-//  Fase 2 (futuro): push notifications.
+//  Fase 2: push notifications.
 // ================================================================
 
 const CACHE_NAME = 'chpt-w3y-v1';
@@ -32,6 +32,49 @@ self.addEventListener('activate', (e) => {
     )
   );
   self.clients.claim();
+});
+
+// ================================================================
+//  EVENTO PUSH — llega cuando el servidor manda una notificación
+// ================================================================
+self.addEventListener('push', (e) => {
+  // El payload viene como JSON: { titulo, mensaje }
+  let titulo  = 'CHPT-W3Y';
+  let mensaje = '⚠️HUMO DETECTADO⚠️';
+
+  if (e.data) {
+    try {
+      const data = e.data.json();
+      titulo  = data.titulo  || titulo;
+      mensaje = data.mensaje || mensaje;
+    } catch { /* Si el JSON falla, usamos los valores por defecto */ }
+  }
+
+  e.waitUntil(
+    self.registration.showNotification(titulo, {
+      body:    mensaje,
+      icon:    '/icon-192.png',
+      badge:   '/icon-192.png',   // Ícono pequeño en la barra de Android
+      vibrate: [200, 100, 200],   // Patrón de vibración en milisegundos
+      tag:     'chpt-alerta',     // Si llega otra notif antes de abrir esta,
+                                  // la reemplaza en vez de apilarlas
+    })
+  );
+});
+
+// ================================================================
+//  EVENTO NOTIFICATIONCLICK — cuando el usuario toca la notificación
+// ================================================================
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close(); // Cierra la notificación
+
+  // Abre la app (o enfoca la pestaña si ya está abierta)
+  e.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then(lista => {
+      if (lista.length > 0) return lista[0].focus();
+      return clients.openWindow('/');
+    })
+  );
 });
 
 // Fetch: network-first (siempre intenta datos frescos, caché como respaldo)
