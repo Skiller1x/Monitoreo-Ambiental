@@ -638,7 +638,25 @@ window.addEventListener('load', () => {
   }, 1000);
 
 
-  setTimeout(suscribirNotificaciones, 2000);
+  // Mostrar botón de notificaciones si aún no tiene permiso
+  if ('Notification' in window && Notification.permission === 'default') {
+    const btn = document.createElement('button');
+    btn.textContent = '🔔 Activar alertas';
+    btn.style.cssText = `
+      position: fixed; bottom: 20px; right: 20px;
+      background: #FF8C00; color: #fff;
+      border: none; border-radius: 20px;
+      padding: 10px 18px; font-size: 14px;
+      font-family: Outfit, sans-serif; font-weight: 600;
+      cursor: pointer; z-index: 999;
+      box-shadow: 0 4px 12px rgba(255,140,0,0.4);
+    `;
+    btn.onclick = () => {
+      suscribirNotificaciones();
+      btn.remove();
+    };
+    document.body.appendChild(btn);
+  }
 });
 
 // ================================================================
