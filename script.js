@@ -636,6 +636,9 @@ window.addEventListener('load', () => {
     const el = document.getElementById('liveTime');
     if (el) el.textContent = new Date().toTimeString().slice(0, 8);
   }, 1000);
+
+
+  setTimeout(suscribirNotificaciones, 2000);
 });
 
 // ================================================================
